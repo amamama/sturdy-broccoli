@@ -47,13 +47,25 @@ int bind_addrinfo(struct addrinfo *addrlist) {
 	return sockfd;
 }
 
+#define BUF_SIZE 256
+
 int main(void) {
 	struct addrinfo *res = init_addrinfo();
 	int sockfd = bind_addrinfo(res);
 	freeaddrinfo(res);
 	listen(sockfd, 1);
-	for(int fd = -1; (fd = accept(sockfd, NULL, NULL)) != -1; ) {
+	for(int fd = -1; (fd = accept(sockfd, NULL, NULL)) != -1;) {
 		printf("accept fd = %d\n", fd);
+		char buf[BUF_SIZE] = {0};
+		for(int nread = 0; nread = recv(fd, buf, sizeof(buf), 0); ) {
+			if(nread == -1) {
+				fprintf(stderr, "cannot recv: %s", strerror(errno));
+				break;
+			}
+			printf("nread = %d>>>%s<<<", nread, buf);
+			fflush(stdout);
+		}
+		close(fd);
 	}
 	fprintf(stderr, "accept returns -1: %s\n", strerror(errno));
 	close(sockfd);
