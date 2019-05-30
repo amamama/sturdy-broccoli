@@ -2,8 +2,10 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <poll.h>
 #include <netdb.h>
 #include <unistd.h>
 
@@ -32,15 +34,16 @@ int bind_addrinfo(struct addrinfo *addrlist) {
 	int sockfd = 0;
 	for(struct addrinfo *rp = addrlist; rp != NULL; rp = rp->ai_next) {
 		sockfd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
-		if(sockfd == -1) continue;
-		if(canbind = !bind(sockfd, rp->ai_addr, rp->ai_addrlen)) break;
+		if(sockfd == -1) {
+			fprintf(stderr, "cannot create socket: %s\n", strerror(errno));
+			continue;
+		}
+		if(canbind = (bind(sockfd, rp->ai_addr, rp->ai_addrlen) != -1)) break;
+		fprintf(stderr, "cannot bind: %s\n", strerror(errno));
 
 		close(sockfd);
 	}
-	if(!canbind) {
-		fprintf(stderr, "cannot bind\n");
-		exit(EXIT_FAILURE);
-	}
+	if(!canbind) exit(EXIT_FAILURE);
 	return sockfd;
 }
 
@@ -49,5 +52,9 @@ int main(void) {
 	int sockfd = bind_addrinfo(res);
 	freeaddrinfo(res);
 	listen(sockfd, 1);
-	sleep(60);
+	for(int fd = -1; (fd = accept(sockfd, NULL, NULL)) != -1; ) {
+		printf("accept fd = %d\n", fd);
+	}
+	fprintf(stderr, "accept returns -1: %s\n", strerror(errno));
+	close(sockfd);
 }
