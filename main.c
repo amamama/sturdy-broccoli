@@ -57,12 +57,18 @@ int main(void) {
 	for(int fd = -1; (fd = accept(sockfd, NULL, NULL)) != -1;) {
 		printf("accept fd = %d\n", fd);
 		char buf[BUF_SIZE] = {0};
-		for(int nread = 0; nread = recv(fd, buf, sizeof(buf), 0); ) {
-			if(nread == -1) {
+		for(int nrecv = 0, nsend = 0; nrecv = recv(fd, buf, sizeof(buf), 0); memset(buf, 0, sizeof(buf))) {
+			if(nrecv == -1) {
 				fprintf(stderr, "cannot recv: %s", strerror(errno));
 				break;
 			}
-			printf("nread = %d>>>%s<<<", nread, buf);
+			printf("nrecv = %d:", nrecv);
+			fwrite(buf, sizeof(buf[0]), sizeof(buf), stdout);
+			nsend = send(fd, buf, nrecv, 0);
+			if(nsend == -1) {
+				fprintf(stderr, "cannot send: %s", strerror(errno));
+				break;
+			}
 			fflush(stdout);
 		}
 		close(fd);
