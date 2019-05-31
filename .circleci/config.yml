@@ -2,7 +2,7 @@ version: 2
 jobs:
   build:
     docker:
-      - image: debian:stretch
+      - image: circleci/buildpack-deps:bionic
 
     steps:
       - checkout
@@ -15,7 +15,6 @@ jobs:
           name: Print the Current Time
           command: date
 
-      - run: apt update && apt install -y build-essential
       - run:
           name: Runnning tests
           command: make test
