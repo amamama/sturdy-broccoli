@@ -15,7 +15,7 @@ jobs:
           name: Print the Current Time
           command: date
 
-      - run: apt update && apt install build-essential
+      - run: apt update && apt install -y build-essential
       - run:
           name: Runnning tests
           command: make test
