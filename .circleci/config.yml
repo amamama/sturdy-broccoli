@@ -14,3 +14,7 @@ jobs:
       - run:
           name: Print the Current Time
           command: date
+
+      - run:
+          name: Runnning tests
+          command: make test
