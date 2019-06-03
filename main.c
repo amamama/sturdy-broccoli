@@ -52,12 +52,11 @@ int bind_addrinfo(struct addrinfo *addrlist) {
 
 #define BUF_SIZE 256
 
-typedef struct {
+typedef struct most_really_awesome_cool_convenient_string_type_in_the_universe {
 	size_t length;
 	size_t size;
 	char *str;
-} most_really_awesome_cool_convenient_string_type_in_the_universe;
-typedef most_really_awesome_cool_convenient_string_type_in_the_universe string;
+} string;
 
 size_t ceiling_pow2(size_t n) {
 	if(n == 0 || n > SIZE_MAX / 2) debug("%zd is too big to ceil\n", n);
@@ -118,6 +117,42 @@ int send_string(int fd, string str) {
 	return send(fd, str.str, str.length, 0);
 }
 
+typedef struct {
+	enum {
+		GET,
+		POST,
+	} method;
+	int id;
+	string body;
+} api_t;
+
+api_t parse_HTTP_request(string str) {
+	char method_name[8] = "";
+	int id = -1, sscanf_num = 0;
+
+	char *tok = strtok(str.str, "\r");
+	//strtok treats second argument as a set of delimiters so this arguments are not interpreted "\r\n" but '\r' or '\n'.
+	//and strtok always returns nonempty string(see man strtok), strtok("aaa\r\nbbb", "\r\n") returns "aaa" and "bbb".
+	//but HTTP body is following "\r\n\r\n", string needs to be devided by "\r".
+	sscanf_num = sscanf(tok, "%s /api/v1/event%*c%d HTTP/1.1", method_name, &id);
+	debug("sscanf_num = %d, %s, %d\n", sscanf_num, method_name, id);
+
+	for(;tok = strtok(NULL, "\r");) {
+		debug("header = [%s]\n", tok);
+		if(tok[0] == '\n' && tok[1] == '\0') break;
+	}
+	tok = strtok(NULL, "\0"); tok++; // ++ for '\n' character
+	debug("body = [%s]\n", tok);
+	tok = strtok(NULL, "\0");
+	assert(tok == NULL);
+
+	api_t ret = {GET, id};
+	/**/ if(!strncmp("GET", method_name, sizeof(method_name))) ret.method = GET;
+	else if(!strncmp("POST", method_name, sizeof(method_name))) ret.method = POST;
+	return ret;
+}
+
+
 int main(void) {
 	size_t i = 0, nbits = sizeof(SIZE_MAX) * CHAR_BIT;
 	struct addrinfo *res = init_addrinfo();
@@ -129,7 +164,10 @@ int main(void) {
 		string str = alloc_string("");
 		for(int nrecv = 0; nrecv = recv_string(fd, &str); ) {
 			debug("%s", str.str);
+			api_t res = parse_HTTP_request(str);
+			debug("method = %d, id = %d", res.method, res.id);
 			send_string(fd, str);
+			break;
 		}
 		close(fd);
 	}
