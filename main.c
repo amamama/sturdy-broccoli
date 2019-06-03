@@ -13,6 +13,8 @@
 #include <netdb.h>
 #include <unistd.h>
 
+#include <jansson.h>
+
 #define debug(...) (fprintf(stderr, "%s:%d:%s:", __FILE__, __LINE__, __func__), fprintf(stderr,  __VA_ARGS__))
 #define error(errno, ...) (debug("%s:", strerror(errno)), fprintf(stderr, __VA_ARGS__))
 
@@ -84,8 +86,18 @@ string alloc_string(char *str) {
 	return ret;
 }
 
+string free_string(string str) {
+	free(str.str);
+	str.str = NULL;
+	str.length = 0;
+	str.size = 0;
+	return str;
+}
+#define free_string(str) (str = free_string(str))
+
 string concat_string_rawstr(string dest, char *str) {
 	assert(dest.str != str);
+	assert(dest.str != NULL);
 	size_t len = strlen(str);
 	if(dest.size < dest.length + len + 1) { //+1 for null character
 		dest.size = ceiling_pow2(dest.length + len + 1);
@@ -98,6 +110,7 @@ string concat_string_rawstr(string dest, char *str) {
 }
 
 string concat_string(string dest, string src) {
+	assert(src.str != NULL);
 	return concat_string_rawstr(dest, src.str);
 }
 
@@ -126,7 +139,7 @@ typedef struct {
 	string body;
 } api_t;
 
-api_t parse_HTTP_request(string str) {
+api_t parse_HTTP_request(string str) { //caller needs to free ret.str
 	char method_name[8] = "";
 	int id = -1, sscanf_num = 0;
 
@@ -141,34 +154,67 @@ api_t parse_HTTP_request(string str) {
 		debug("header = [%s]\n", tok);
 		if(tok[0] == '\n' && tok[1] == '\0') break;
 	}
-	tok = strtok(NULL, "\0"); tok++; // ++ for '\n' character
+	tok = strtok(NULL, ""); tok++; // ++ for '\n' character
 	debug("body = [%s]\n", tok);
-	tok = strtok(NULL, "\0");
+	string body = alloc_string(tok);
+	tok = strtok(NULL, "");
 	assert(tok == NULL);
 
-	api_t ret = {GET, id};
+	api_t ret = {GET, id, body};
 	/**/ if(!strncmp("GET", method_name, sizeof(method_name))) ret.method = GET;
 	else if(!strncmp("POST", method_name, sizeof(method_name))) ret.method = POST;
 	return ret;
 }
 
+static json_t *todo = NULL;
+int init_todo(void) {
+	if(todo) return 0;
+	json_error_t err;
+	todo = json_loads("{\"events\":[]}", 0, &err);
+	return 0;
+}
+
+int send_todo(int fd) {
+	return json_dumpfd(todo, fd, 0);
+}
+
+#define HTTP_STATUS_404 "404 Not Found\r\n"
+int get_respond(int id, int fd) {
+	if(id < 0) return send_todo(fd);
+	size_t len = json_array_size(json_object_get(todo, "events"));
+	if(len <= id) return send(fd, HTTP_STATUS_404, strlen(HTTP_STATUS_404), 0);
+	return 0;
+}
+
+int post_respond(string body, int fd) {
+	return 0;
+}
+
+int respond(api_t res, int fd) {
+	switch(res.method) {
+		case GET: get_respond(res.id, fd); break;
+		case POST: post_respond(res.body, fd); break;
+		default: debug("an error occured. method = %d\n", res.method);
+	}
+	debug("method = %d, id = %d, body = %s\n", res.method, res.id, res.body.str);
+	free_string(res.body);
+	return 0;
+}
 
 int main(void) {
+	init_todo();
+
 	size_t i = 0, nbits = sizeof(SIZE_MAX) * CHAR_BIT;
 	struct addrinfo *res = init_addrinfo();
-	int sockfd = bind_addrinfo(res);
-	freeaddrinfo(res);
+	int sockfd = bind_addrinfo(res); freeaddrinfo(res);
 	listen(sockfd, 1);
 	for(int fd = -1; (fd = accept(sockfd, NULL, NULL)) != -1;) {
 		debug("accept fd = %d\n", fd);
 		string str = alloc_string("");
-		for(int nrecv = 0; nrecv = recv_string(fd, &str); ) {
-			debug("%s", str.str);
-			api_t res = parse_HTTP_request(str);
-			debug("method = %d, id = %d", res.method, res.id);
-			send_string(fd, str);
-			break;
-		}
+		int nrecv = recv_string(fd, &str);
+		debug("%s", str.str);
+		send_string(fd, str);
+		respond(parse_HTTP_request(str), fd); //parse overwrites str
 		close(fd);
 	}
 	error(errno, "accept returns -1:\n");
