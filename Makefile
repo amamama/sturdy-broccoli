@@ -3,7 +3,7 @@ SHELL=bash
 all: a.out
 
 a.out: main.c
-	gcc main.c
+	gcc main.c -ljansson
 
 run: a.out
 	./a.out
