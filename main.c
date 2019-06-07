@@ -134,6 +134,7 @@ int parse_date_time_format(char const *str) {
 	if(date_fullyear < 0) goto fail;
 	if(!(0 < date_month && date_month < 13 && is_valid_day(date_fullyear, date_month, date_mday))) goto fail;
 
+	bool Z = strchr(full_time, 'Z') || strchr(full_time, 'z');
 	char *partial_time = strtok(full_time, "Zz+-");
 	char *time_offset = strtok(NULL, "");
 	debug("partial_time = [%s], time_offset = [%s]", partial_time, time_offset);
@@ -142,7 +143,7 @@ int parse_date_time_format(char const *str) {
 	sscanf_num = sscanf(partial_time, "%02d:%02d:%02lf", &time_hour, &time_minute, &time_second);
 	if(sscanf_num != 3) goto fail;
 	if(!(-1 < time_hour && time_hour < 24 && -1 < time_minute && time_minute < 60 && 0 <= time_second && time_second < 61)) goto fail;
-	if(time_offset[0] == 'Z' && time_offset[1] == 0) goto success;
+	if(Z) goto success;
 	int time_numoffset_hour = -1, time_numoffset_minute = -1;
 	sscanf_num = sscanf(time_offset, "%02d:%02d", &time_numoffset_hour, &time_numoffset_minute);
 	if(!(-1 < time_numoffset_hour && time_numoffset_hour < 24 && -1 < time_numoffset_minute && time_numoffset_minute < 60)) goto fail;
@@ -158,7 +159,7 @@ int parse_date_time_format(char const *str) {
 
 int recv_string(int fd, string *out) {
 	int len = 0;
-	for(int nrecv = BUF_SIZE; nrecv == BUF_SIZE; ) {
+	for(int nrecv = BUF_SIZE - 1; nrecv == BUF_SIZE - 1; ) {
 		char buf[BUF_SIZE] = {0};
 		len += nrecv = recv(fd, buf, sizeof(buf) - 1, 0); //-1 for null character
 		if(nrecv == -1) { error(errno, "cannot recv\n"); break; }
@@ -172,6 +173,15 @@ int send_string(int fd, string str) {
 	return send(fd, str.str, str.length, 0);
 }
 
+#define HTTP_STATUS_100 "100 Continue\r\n"
+#define HTTP_STATUS_200 "200 OK\r\n"
+#define HTTP_STATUS_400 "400 Bad Request\r\n"
+#define HTTP_STATUS_404 "404 Not Found\r\n"
+#define send_100 (send(fd, HTTP_STATUS_100, strlen(HTTP_STATUS_100), 0))
+#define send_200 (send(fd, HTTP_STATUS_200, strlen(HTTP_STATUS_200), 0))
+#define send_400 (send(fd, HTTP_STATUS_400, strlen(HTTP_STATUS_400), 0))
+#define send_404 (send(fd, HTTP_STATUS_404, strlen(HTTP_STATUS_404), 0))
+
 typedef struct {
 	enum {
 		GET,
@@ -181,7 +191,7 @@ typedef struct {
 	string body;
 } api_t;
 
-api_t parse_HTTP_request(string str) { //caller needs to free ret.str
+api_t parse_HTTP_request(int fd, string str) { //caller needs to free ret.str
 	char method_name[8] = "";
 	int id = -1, sscanf_num = 0;
 
@@ -192,8 +202,17 @@ api_t parse_HTTP_request(string str) { //caller needs to free ret.str
 	sscanf_num = sscanf(tok, "%s /api/v1/event%*c%d HTTP/1.1", method_name, &id);
 	debug("sscanf_num = %d, %s, %d\n", sscanf_num, method_name, id);
 
-	for(;tok = strtok(NULL, "\r");) {
+	for(bool content = false; tok = strtok(NULL, "\r");) {
 		debug("header = [%s]\n", tok);
+		char header_name[strlen(tok)];
+		sscanf(tok + 1, "%[!#$%&'*+.^_`|~0-9A-Za-z-]%*s", header_name); // +1 for \\n
+		debug("header_name = [%s]\n", header_name);
+		if(!strcmp(header_name, "Expect")) {
+			send_100;
+			string str = alloc_string("");
+			int nrecv = recv_string(fd, &str);
+			return (api_t){POST, -1, str};
+		}
 		if(tok[0] == '\n' && tok[1] == '\0') break;
 	}
 	tok = strtok(NULL, ""); tok++; // ++ for '\n' character
@@ -225,12 +244,6 @@ size_t register_todo(json_t *item) {
 	return len;
 }
 
-#define HTTP_STATUS_200 "200 OK\r\n"
-#define HTTP_STATUS_400 "400 Bad Request\r\n"
-#define HTTP_STATUS_404 "404 Not Found\r\n"
-#define send_200 (send(fd, HTTP_STATUS_200, strlen(HTTP_STATUS_200), 0))
-#define send_400 (send(fd, HTTP_STATUS_400, strlen(HTTP_STATUS_400), 0))
-#define send_404 (send(fd, HTTP_STATUS_404, strlen(HTTP_STATUS_404), 0))
 int send_todo(int fd) {
 	send_200;
 	return json_dumpfd(todo, fd, 0);
@@ -326,7 +339,7 @@ int main(void) {
 		int nrecv = recv_string(fd, &str);
 		debug("%s", str.str);
 		//send_string(fd, str);
-		respond(parse_HTTP_request(str), fd); //parse overwrites str
+		respond(parse_HTTP_request(fd, str), fd); //parse overwrites str
 		free_string(str);
 		close(fd);
 	}
