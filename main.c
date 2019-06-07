@@ -15,8 +15,14 @@
 
 #include <jansson.h>
 
+#define NDEBUG
+#ifndef NDEBUG
 #define debug(...) (fprintf(stderr, "%s:%d:%s:", __FILE__, __LINE__, __func__), fprintf(stderr,  __VA_ARGS__))
 #define error(errno, ...) (debug("%s:", strerror(errno)), fprintf(stderr, __VA_ARGS__))
+#else
+#define debug(...) ((void*)0)
+#define error(...) ((void*)0)
+#endif
 
 struct addrinfo *init_addrinfo(void) {
 	struct addrinfo hints;
@@ -126,7 +132,7 @@ int parse_date_time_format(char const *str) {
 	string s = alloc_string(str);
 	char *full_date = strtok(s.str, "Tt");
 	char *full_time = strtok(NULL, "");
-	debug("full_date = [%s], full_time = [%s]", full_date, full_time);
+	debug("full_date = [%s], full_time = [%s]\n", full_date, full_time);
 	int sscanf_num = -1;
 	int date_fullyear = -1, date_month = -1, date_mday = -1;
 	sscanf_num = sscanf(full_date, "%04d-%02d-%02d", &date_fullyear, &date_month, &date_mday);
@@ -134,10 +140,11 @@ int parse_date_time_format(char const *str) {
 	if(date_fullyear < 0) goto fail;
 	if(!(0 < date_month && date_month < 13 && is_valid_day(date_fullyear, date_month, date_mday))) goto fail;
 
+	if(!(strchr(full_time, 'Z') || strchr(full_time, 'z') || strchr(full_time, '+') || strchr(full_time, '-'))) goto fail;
 	bool Z = strchr(full_time, 'Z') || strchr(full_time, 'z');
 	char *partial_time = strtok(full_time, "Zz+-");
 	char *time_offset = strtok(NULL, "");
-	debug("partial_time = [%s], time_offset = [%s]", partial_time, time_offset);
+	debug("partial_time = [%s], time_offset = [%s]\n", partial_time, time_offset);
 	int time_hour = -1, time_minute = -1;
 	double time_second = -1;
 	sscanf_num = sscanf(partial_time, "%02d:%02d:%02lf", &time_hour, &time_minute, &time_second);
@@ -163,7 +170,7 @@ int recv_string(int fd, string *out) {
 		char buf[BUF_SIZE] = {0};
 		len += nrecv = recv(fd, buf, sizeof(buf) - 1, 0); //-1 for null character
 		if(nrecv == -1) { error(errno, "cannot recv\n"); break; }
-		debug("nrecv = %d\n", nrecv);
+		//debug("nrecv = %d\n", nrecv);
 		*out = concat_string_rawstr(*out, buf);
 	}
 	return len;
@@ -206,7 +213,7 @@ api_t parse_HTTP_request(int fd, string str) { //caller needs to free ret.str
 		debug("header = [%s]\n", tok);
 		char header_name[strlen(tok)];
 		sscanf(tok + 1, "%[!#$%&'*+.^_`|~0-9A-Za-z-]%*s", header_name); // +1 for \\n
-		debug("header_name = [%s]\n", header_name);
+		//debug("header_name = [%s]\n", header_name);
 		if(!strcmp(header_name, "Expect")) {
 			send_100;
 			string str = alloc_string("");
@@ -251,8 +258,10 @@ int send_todo(int fd) {
 
 int get_respond(int id, int fd) {
 	if(id < 0) return send_todo(fd);
-	size_t len = json_array_size(json_object_get(todo, "events"));
+	json_t *arr = json_object_get(todo, "events");
+	size_t len = json_array_size(arr);
 	if(len <= id) return send_404;
+	json_dumpfd(json_array_get(arr, id), fd, 0);
 	return 0;
 }
 
@@ -296,19 +305,17 @@ int post_respond(string body, int fd) {
 		send_400;
 	}
 
-
 	json_t *response = json_object();
 	json_object_set_new(response, "status", json_string(status?"success":"failure"));
 	json_object_set_new(response, "message", json_string(message.str));
 	if(status) {
-		size_t id = register_todo(body_json);
+		size_t id = register_todo(body_json); // decref in this function
 		json_object_set_new(response, "id", json_integer(id));
 	}
 
 	json_dumpfd(response, fd, 0);
 
 	free_string(message);
-	json_decref(body_json);
 	json_decref(response);
 	return 0;
 
