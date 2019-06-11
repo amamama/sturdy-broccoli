@@ -8,7 +8,7 @@ This Software is tested by CircleCI environment, that is Ubunbu Bionic, so you p
 
 1. Before Compile, you should install [jansson library](https://jansson.readthedocs.io/en/2.12/) on your OS. At least, Ver 2.10 is needed.
    If you try to compile on Ubuntu, just type `sudo apt install -y libjansson4 libjansson-dev`. Otherwise, search your package manager for jansson library and install it.
-1. download this repository. (type `git clone https://github.com/amamama/sturdy-broccoli.git` in terminal or simplly donwload its zip file.)
+1. Download this repository. (type `git clone https://github.com/amamama/sturdy-broccoli.git` in terminal or simply donwload its zip file.)
 1. Open your terminal and change current directory to this repository. (type `cd sturdy-broccoli`.)
 1. type `make`
 
@@ -18,6 +18,8 @@ This Software is tested by CircleCI environment, that is Ubunbu Bionic, so you p
    and this server listen port 8080 to serve HTTP request.
 
 ### Test
+
+Test use `python3` command beacuse of Ubuntu. you may change this command suitable on syour system.
 
 1. Just type `make test`.
 
